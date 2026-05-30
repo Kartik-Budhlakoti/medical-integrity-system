@@ -6,7 +6,7 @@ from app.database import Base
 class Patient(Base):
     __tablename__="patients"
     id = Column(Integer, primary_key=True , index=True)
-    name = Column(String , nullable=False)
+    full_name = Column(String , nullable=False)
     height = Column(Float , nullable=False)
     weight = Column(Float , nullable=False)
     dob = Column(DateTime , nullable=False)
