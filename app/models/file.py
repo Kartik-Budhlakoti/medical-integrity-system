@@ -18,3 +18,13 @@ class File(Base):
     patient = relationship("Patient" , back_populates="files")
     uploaded_by = relationship("User" , foreign_keys=[uploaded_by_id])
     invalidated_by = relationship("User" , foreign_keys=[invalidated_by_id])
+    file_hash = relationship("FileHash", back_populates="file", uselist=False)
+
+class FileHash(Base):
+    __tablename__ = "file_hashes"
+    id = Column(Integer , primary_key=True , index=True)
+    file_id = Column(Integer , ForeignKey("files.id") , nullable=False)
+    hash_value = Column(String , nullable=False)
+    created_at = Column(DateTime , default=lambda: datetime.now(timezone.utc))
+    verified_at = Column(DateTime , nullable=True)
+    file = relationship("File" , back_populates="file_hash")
