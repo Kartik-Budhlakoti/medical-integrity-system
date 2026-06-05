@@ -10,7 +10,7 @@ from app.core.dependencies import get_current_user
 router = APIRouter(prefix="/users", tags=["users"])
 
 @router.post("/create" , response_model=user.UserResponse)
-def create_user(user_data : user.UserCreate , db: Session = Depends(get_db), current: TokenData = Depends(get_current_user)):
+def create_user(user_data : user.UserCreate , db: Session = Depends(get_db) ):
     existing = db.query(User).filter(User.email == user_data.email).first()
     if existing:
         raise HTTPException(status_code=400 , detail="Email already registered")
