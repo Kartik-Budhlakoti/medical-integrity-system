@@ -42,7 +42,7 @@ def create_user(request : Request,user_data : user.UserCreate , db: Session = De
             user_id= current.user_id,
             action= "USER_CREATION_SUCCESSFUL",
             entity_type = "users",
-            entity_id =current.user_id, 
+            entity_id =new_user.id, 
             result= "SUCCESS",
             ip_address=request.client.host
         )
