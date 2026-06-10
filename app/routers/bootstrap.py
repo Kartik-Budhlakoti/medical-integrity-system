@@ -1,6 +1,7 @@
-from fastapi import APIRouter , Depends , HTTPException
+from fastapi import APIRouter , Depends , HTTPException , Request
 from sqlalchemy.orm import Session
 from app.models.user import Role , User
+from app.core.audit import log_action
 from app.database import get_db
 from app.schemas import bootstrap
 from app.core.security import hash_password
@@ -8,7 +9,7 @@ from app.core.security import hash_password
 router = APIRouter(prefix="/bootstrap" , tags=["bootstrap"])
 
 @router.post('/superadmin')
-def create_super_admin(data: bootstrap.BootstrapCreate ,db :Session = Depends(get_db)):
+def create_super_admin(request : Request , data: bootstrap.BootstrapCreate ,db :Session = Depends(get_db)):
 
     existing_superadmin = db.query(User).join(Role).filter(Role.role_name == "SuperAdmin").first()
     if existing_superadmin:
@@ -40,4 +41,13 @@ def create_super_admin(data: bootstrap.BootstrapCreate ,db :Session = Depends(ge
     db.add(superadmin)
     db.commit()
     db.refresh(superadmin)
+    log_action(
+            db=db,
+            user_id= superadmin.id,
+            action= "SYSTEM_INITIALIZED",
+            entity_type = "users",
+            entity_id =superadmin.id, 
+            result= "SUCCESS",
+            ip_address=request.client.host
+        )
     return {"message" : "System initialized successfully"}
