@@ -14,6 +14,6 @@ class TreatmentNote(Base):
     medications = Column(String , nullable=False)
     observations = Column(String , nullable=True)
     orders = Column(String , nullable=False)
-    created_at = Column(DateTime , default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True) , default=lambda: datetime.now(timezone.utc))
     treatment_by = relationship("User" , foreign_keys=[treatment_by_id])
     patient = relationship("Patient", back_populates="treatment_notes")

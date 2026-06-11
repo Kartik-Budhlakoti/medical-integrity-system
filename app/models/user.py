@@ -1,5 +1,5 @@
 from app.database import Base
-from sqlalchemy import Column , Integer , String , DateTime , Boolean , ForeignKey
+from sqlalchemy import Column , Integer ,  String , DateTime , Boolean , ForeignKey , text
 from sqlalchemy.orm import relationship
 from datetime import datetime , timezone
 
@@ -18,7 +18,8 @@ class User(Base):
     email = Column(String , unique=True ,nullable=False)
     role_id = Column(Integer , ForeignKey("roles.id") ,nullable=False)
     pass_hash= Column(String , nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    is_active = Column(Boolean , default=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    is_active = Column(Boolean , server_default=text('true') , nullable=False)
     role = relationship("Role", back_populates="users")
+
 
