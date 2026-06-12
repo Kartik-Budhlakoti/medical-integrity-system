@@ -43,4 +43,33 @@ def patient_creation(request:Request , patient_data : PatientCreate , db : Sessi
             ip_address=request.client.host
         )
     return new_patient
+
+@router.get("/{patient_id}", response_model=PatientResponse)
+def get_patient(request: Request, patient_id: int, db: Session = Depends(get_db), current: TokenData = Depends(get_current_user)):
+    patient = db.query(Patient).filter(Patient.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")    
+    if current.role == "Admin":
+        log_action(db=db, user_id=current.user_id, action="PATIENT_ACCESSED",
+                   entity_type="patients", entity_id=patient.id,
+                   result="SUCCESS", ip_address=request.client.host)
+        return patient
+    
+    from app.models.patient_assignment import PatientAssignment
+    assignment = db.query(PatientAssignment).filter(
+        PatientAssignment.patient_id == patient_id,
+        PatientAssignment.user_id == current.user_id,
+        PatientAssignment.is_active == True
+    ).first()
+    
+    if not assignment:
+        log_action(db=db, user_id=current.user_id, action="PATIENT_ACCESS_DENIED",
+                   entity_type="patients", entity_id=patient_id,
+                   result="FAILURE", ip_address=request.client.host)
+        raise HTTPException(status_code=403, detail="Not assigned to this patient")
+    
+    log_action(db=db, user_id=current.user_id, action="PATIENT_ACCESSED",
+               entity_type="patients", entity_id=patient.id,
+               result="SUCCESS", ip_address=request.client.host)
+    return patient
     
