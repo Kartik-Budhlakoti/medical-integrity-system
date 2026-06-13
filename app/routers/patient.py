@@ -6,6 +6,8 @@ from app.models.patient import Patient
 from app.core.audit import log_action
 from app.core.dependencies import get_current_user
 from app.schemas.token import TokenData
+from app.models.patient_assignment import PatientAssignment
+
 
 router = APIRouter(prefix="/patients" , tags=["patients"])
 
@@ -44,8 +46,41 @@ def patient_creation(request:Request , patient_data : PatientCreate , db : Sessi
         )
     return new_patient
 
+@router.get("/", response_model=list[PatientResponse])
+def get_all_patients(request: Request , db: Session = Depends(get_db), current : TokenData = Depends(get_current_user)):
+    if current.role not in ["Admin", "Doctor", "Nurse"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if current.role == "Admin":
+        patients = db.query(Patient).all()
+        log_action(db=db, user_id=current.user_id, action="PATIENTS_ACCESSED",
+                   entity_type="patients", entity_id=0,
+                   result="SUCCESS", ip_address=request.client.host)
+        return patients
+    
+    if current.role in ["Doctor", "Nurse"]:
+        assigned = db.query(PatientAssignment).filter(
+            PatientAssignment.user_id == current.user_id,
+            PatientAssignment.is_active.is_(True)
+        ).all()
+        if not assigned:
+            log_action(db=db, user_id=current.user_id, action="PATIENTS_ACCESS_DENIED",
+                    entity_type="patients", entity_id=0,
+                    result="FAILURE", ip_address=request.client.host)
+            raise HTTPException(status_code=403, detail="Not assigned to this patient")
+        
+        patient_ids = [a.patient_id for a in assigned]
+        patients = db.query(Patient).filter(Patient.id.in_(patient_ids)).all()
+        log_action(db=db, user_id=current.user_id, action="PATIENTS_ACCESSED",
+                entity_type="patients", entity_id=0,
+                result="SUCCESS", ip_address=request.client.host)
+        return patients 
+    
+    raise HTTPException(status_code=403, detail="Not authorized")
+
 @router.get("/{patient_id}", response_model=PatientResponse)
 def get_patient(request: Request, patient_id: int, db: Session = Depends(get_db), current: TokenData = Depends(get_current_user)):
+    if current.role not in ["Admin", "Doctor", "Nurse"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
     patient = db.query(Patient).filter(Patient.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")    
@@ -55,11 +90,10 @@ def get_patient(request: Request, patient_id: int, db: Session = Depends(get_db)
                    result="SUCCESS", ip_address=request.client.host)
         return patient
     
-    from app.models.patient_assignment import PatientAssignment
     assignment = db.query(PatientAssignment).filter(
         PatientAssignment.patient_id == patient_id,
         PatientAssignment.user_id == current.user_id,
-        PatientAssignment.is_active == True
+        PatientAssignment.is_active.is_(True)
     ).first()
     
     if not assignment:
@@ -72,4 +106,6 @@ def get_patient(request: Request, patient_id: int, db: Session = Depends(get_db)
                entity_type="patients", entity_id=patient.id,
                result="SUCCESS", ip_address=request.client.host)
     return patient
+
+
     
