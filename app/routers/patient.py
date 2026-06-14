@@ -13,7 +13,7 @@ router = APIRouter(prefix="/patients" , tags=["patients"])
 
 ROLE_UPDATE_PERMISSIONS = {
     "Admin": {"is_admitted","is_emergency","chief_complaint"},
-    "Doctor": {"is_emergency","chief_complainr"},
+    "Doctor": {"is_emergency","chief_complaint"},
     "Nurse" : {"height","weight"}
 }
 
