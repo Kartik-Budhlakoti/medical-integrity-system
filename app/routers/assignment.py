@@ -41,8 +41,7 @@ def assign(request: Request, assignment_data: AssignmentCreate, db: Session = De
     new_assignment = PatientAssignment(
         patient_id=assignment_data.patient_id,
         user_id=assignment_data.user_id,
-        assigned_by_id=current.user_id,
-        is_active=True
+        assigned_by_id=current.user_id
     )
     db.add(new_assignment)
     db.commit()
