@@ -10,6 +10,7 @@ from app.models.file import File as FileModel, FileHash
 from app.models.patient import Patient
 from app.models.patient_assignment import PatientAssignment
 from datetime import datetime, timezone
+from fastapi.responses import FileResponse as FastAPIFileResponse
 import os
 import uuid
 
@@ -102,3 +103,80 @@ async def upload_file(
             ip_address=request.client.host
         )
     return file_record
+
+@router.get("/{file_id}")
+def get_file(request:Request ,file_id : int, 
+    db : Session= Depends (get_db) , 
+    current : TokenData = Depends(get_current_user)):
+     
+    if current.role not in ["Admin" , "Doctor" , "Nurse"]:
+        log_action(
+            db=db,
+            user_id= current.user_id,
+            action= "FILE_ACCESS_DENIED",
+            entity_type = "files",
+            entity_id =0, 
+            result= "FAILURE",
+            ip_address=request.client.host
+        )
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    file_record = db.query(FileModel).filter(FileModel.id == file_id).first()
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")  
+    
+    if not file_record.is_active:
+        raise HTTPException(status_code=403, detail="File is invalidated")  
+    
+    if current.role in ["Doctor", "Nurse"]:
+        assigned = db.query(PatientAssignment).filter(
+            PatientAssignment.patient_id == file_record.patient_id,
+            PatientAssignment.user_id == current.user_id,
+            PatientAssignment.is_active.is_(True)
+        ).first()
+        if not assigned:
+            log_action(db=db, user_id=current.user_id, action="FILE_ACCESS_DENIED",
+                    entity_type="files", entity_id=0,
+                    result="FAILURE", ip_address=request.client.host)
+            raise HTTPException(status_code=403, detail="Not assigned to this patient")
+        
+    with open(file_record.file_path , "rb") as f:    
+        file_bytes = f.read()
+
+    hash_value = compute_sha256(file_bytes)
+
+    stored_hash = db.query(FileHash).filter(FileHash.file_id == file_record.id).first()
+    if not stored_hash:
+        raise HTTPException(status_code=500, detail="File hash not found")
+    
+    if hash_value != stored_hash.hash_value : 
+        file_record.is_active = False
+        db.commit()
+        log_action(
+            db=db,
+            user_id= current.user_id,
+            action= "TAMPER_DETECTED",
+            entity_type = "files",
+            entity_id =file_record.id, 
+            result= "FAILURE",
+            ip_address=request.client.host
+        )
+        raise HTTPException(status_code=403, detail="File integrity verification failed")
+    
+    stored_hash.verified_at = datetime.now(timezone.utc)
+    db.commit()
+    log_action(
+            db=db,
+            user_id= current.user_id,
+            action= "FILE_ACCESSED",
+            entity_type = "files",
+            entity_id =file_record.id, 
+            result= "SUCCESS",
+            ip_address=request.client.host
+        )
+    return FastAPIFileResponse(
+    path=file_record.file_path,
+    filename=file_record.file_name,
+    media_type="application/octet-stream"
+) 
+  
