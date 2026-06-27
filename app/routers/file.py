@@ -180,3 +180,28 @@ def get_file(request:Request ,file_id : int,
     media_type="application/octet-stream"
 ) 
   
+@router.post("/{file_id}/invalidate")
+def file_invalidation(request: Request , file_id:int, invalidation_data:FileInvalidate, db:Session = Depends(get_db), current : TokenData = Depends(get_current_user)):
+    if current.role != "Admin":
+        log_action(db=db, user_id=current.user_id, action="FILE_INVALIDATION_FAILED",
+                   entity_type="files", entity_id=file_id,
+                   result="FAILURE", ip_address=request.client.host)
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    file_record = db.query(FileModel).filter(FileModel.id == file_id).first()
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    if not file_record.is_active:
+        raise HTTPException(status_code=400, detail="File is already invalidated")
+
+    file_record.is_active = False
+    file_record.invalidation_reason = invalidation_data.invalidation_reason
+    file_record.invalidated_by_id = current.user_id
+    file_record.invalidated_at = datetime.now(timezone.utc)
+    db.commit()
+    
+    log_action(db=db, user_id=current.user_id, action="FILE_INVALIDATED",
+                   entity_type="files", entity_id=file_id,
+                   result="SUCCESS", ip_address=request.client.host)
+    return {"message": "File invalidated successfully"}
