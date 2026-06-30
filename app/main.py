@@ -5,6 +5,7 @@ from app.routers.bootstrap import router as bootstrap_router
 from app.routers.patient import router as patient_router 
 from app.routers.assignment import router as assignment_router
 from app.routers.file import router as file_router
+from app.routers.treatment_note import router as treatment_note_router
 import app.models
 
 app = FastAPI(
@@ -23,6 +24,8 @@ app.include_router(patient_router)
 app.include_router(assignment_router)
 
 app.include_router(file_router)
+
+app.include_router(treatment_note_router)
 
 @app.get("/health")
 def health_check():

@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models.patient import Patient
 from app.models.patient_assignment import PatientAssignment
 from app.core.audit import log_action
+from typing import List
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -56,3 +57,39 @@ def create_treatment_note(
                result="SUCCESS", ip_address=request.client.host)
 
     return new_note
+
+@router.get("/{patient_id}", response_model=List[TreatmentNoteResponse])
+def get_treatment_notes(
+    request: Request,
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current: TokenData = Depends(get_current_user)):
+
+    if current.role not in ["Admin", "Doctor", "Nurse"]:
+        log_action(db=db, user_id=current.user_id, action="NOTE_ACCESS_FAILED",
+                   entity_type="treatment_notes", entity_id=0,
+                   result="FAILURE", ip_address=request.client.host)
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    patient = db.query(Patient).filter(Patient.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    if current.role in ["Doctor", "Nurse"]:
+        assigned = db.query(PatientAssignment).filter(
+            PatientAssignment.patient_id == patient_id,
+            PatientAssignment.user_id == current.user_id,
+            PatientAssignment.is_active.is_(True)
+        ).first()
+        if not assigned:
+            log_action(db=db, user_id=current.user_id, action="NOTE_ACCESS_FAILED",
+                       entity_type="treatment_notes", entity_id=0,
+                       result="FAILURE", ip_address=request.client.host)
+            raise HTTPException(status_code=403, detail="Not assigned to this patient")
+
+    treatment_notes = db.query(TreatmentNote).filter(TreatmentNote.patient_id == patient_id).all()
+    log_action(db=db, user_id=current.user_id, action="NOTE_ACCESSED",
+               entity_type="treatment_notes", entity_id=patient_id,
+               result="SUCCESS", ip_address=request.client.host)
+
+    return treatment_notes
