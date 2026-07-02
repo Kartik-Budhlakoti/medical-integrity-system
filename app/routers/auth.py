@@ -7,12 +7,17 @@ from app.schemas.token import Token
 from app.core.security import verify_password 
 from app.core.jwt import create_access_token
 from app.core.audit import log_action
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=Token)
-def login(request : Request ,credentials:UserLogin , db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+async def login(request : Request ,credentials:UserLogin , db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == credentials.email).first()
 
     if not user:

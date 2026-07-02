@@ -5,11 +5,16 @@ from app.core.audit import log_action
 from app.database import get_db
 from app.schemas import bootstrap
 from app.core.security import hash_password
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/bootstrap" , tags=["bootstrap"])
 
 @router.post('/superadmin')
-def create_super_admin(request : Request , data: bootstrap.BootstrapCreate ,db :Session = Depends(get_db)):
+@limiter.limit("3/minute")
+async def create_super_admin(request : Request , data: bootstrap.BootstrapCreate ,db :Session = Depends(get_db)):
 
     existing_superadmin = db.query(User).join(Role).filter(Role.role_name == "SuperAdmin").first()
     if existing_superadmin:
