@@ -55,6 +55,9 @@ def patient_creation(request:Request , patient_data : PatientCreate , db : Sessi
 @router.get("/", response_model=list[PatientResponse])
 def get_all_patients(request: Request , db: Session = Depends(get_db), current : TokenData = Depends(get_current_user)):
     if current.role not in ["Admin", "Doctor", "Nurse"]:
+        log_action(db=db, user_id=current.user_id, action="PATIENTS_ACCESS_DENIED",
+               entity_type="patients", entity_id=0,
+               result="FAILURE", ip_address=request.client.host)
         raise HTTPException(status_code=403, detail="Not authorized")
     if current.role == "Admin":
         patients = db.query(Patient).all()
@@ -81,11 +84,12 @@ def get_all_patients(request: Request , db: Session = Depends(get_db), current :
                 result="SUCCESS", ip_address=request.client.host)
         return patients 
     
-    raise HTTPException(status_code=403, detail="Not authorized")
-
 @router.get("/{patient_id}", response_model=PatientResponse)
 def get_patient(request: Request, patient_id: int, db: Session = Depends(get_db), current: TokenData = Depends(get_current_user)):
     if current.role not in ["Admin", "Doctor", "Nurse"]:
+        log_action(db=db, user_id=current.user_id, action="PATIENT_ACCESS_DENIED",
+               entity_type="patients", entity_id=patient_id,
+               result="FAILURE", ip_address=request.client.host)
         raise HTTPException(status_code=403, detail="Not authorized")
     patient = db.query(Patient).filter(Patient.id == patient_id).first()
     if not patient:
