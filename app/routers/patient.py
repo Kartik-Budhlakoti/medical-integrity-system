@@ -145,7 +145,7 @@ def update_patient(request: Request , patient_id:int , patient_data : PatientUpd
             log_action(db=db, user_id=current.user_id, action="PATIENT_UPDATE_FAILED",
                    entity_type="patients", entity_id=patient_id,
                    result="FAILURE", ip_address=request.client.host)
-        raise HTTPException(status_code=403, detail=f"Not assigned to this patient")
+            raise HTTPException(status_code=403, detail=f"Not assigned to this patient")
     
     update_data = patient_data.model_dump(exclude_unset=True)
     for field , value in update_data.items():
