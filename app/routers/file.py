@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from fastapi.responses import FileResponse as FastAPIFileResponse
 import os
 import uuid
+from typing import Annotated
+from fastapi import Form   
 
 UPLOAD_DIR= os.getenv("UPLOAD_DIR" , "uploads")
 os.makedirs(UPLOAD_DIR , exist_ok=True)
@@ -25,7 +27,8 @@ router = APIRouter(prefix="/files" , tags=["files"])
 @router.post("/upload" , response_model=FileResponse)
 async def upload_file(
     request: Request,
-    file_data : FileUpload = Depends(),
+    patient_id : Annotated[int , Form()],
+    file_type : Annotated[str , Form()],
     file: UploadFile = File(...), 
     db : Session= Depends (get_db) , 
     current : TokenData = Depends(get_current_user)
@@ -41,13 +44,13 @@ async def upload_file(
             ip_address=request.client.host
         )
         raise HTTPException(status_code=403, detail="Not authorized")
-    patient = db.query(Patient).filter(Patient.id == file_data.patient_id).first()
+    patient = db.query(Patient).filter(Patient.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")  
     
     if current.role in ["Doctor", "Nurse"]:
         assigned = db.query(PatientAssignment).filter(
-            PatientAssignment.patient_id == file_data.patient_id,
+            PatientAssignment.patient_id == patient_id,
             PatientAssignment.user_id == current.user_id,
             PatientAssignment.is_active.is_(True)
         ).first()
@@ -77,9 +80,9 @@ async def upload_file(
     hash_value = compute_sha256(file_bytes)
 
     file_record = FileModel(
-        patient_id = file_data.patient_id,
+        patient_id = patient_id,
         uploaded_by_id = current.user_id,
-        file_type = file_data.file_type,
+        file_type = file_type,
         file_name = original_filename,
         file_path = file_path
     )
