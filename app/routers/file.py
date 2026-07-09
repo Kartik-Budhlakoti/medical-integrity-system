@@ -129,7 +129,10 @@ def get_file(request:Request ,file_id : int,
         raise HTTPException(status_code=404, detail="File not found")  
     
     if not file_record.is_active:
-        raise HTTPException(status_code=403, detail="File is invalidated")  
+        log_action(db=db, user_id=current.user_id, action="FILE_ACCESS_DENIED",
+                entity_type="files", entity_id=file_id,
+                result="FAILURE", ip_address=request.client.host)
+        raise HTTPException(status_code=403, detail="File is invalidated") 
     
     if current.role in ["Doctor", "Nurse"]:
         assigned = db.query(PatientAssignment).filter(
@@ -196,6 +199,9 @@ def file_invalidation(request: Request , file_id:int, invalidation_data:FileInva
         raise HTTPException(status_code=404, detail="File not found")
     
     if not file_record.is_active:
+        log_action(db=db, user_id=current.user_id, action="FILE_INVALIDATION_FAILED",
+                entity_type="files", entity_id=file_id,
+                result="FAILURE", ip_address=request.client.host)
         raise HTTPException(status_code=400, detail="File is already invalidated")
 
     file_record.is_active = False
