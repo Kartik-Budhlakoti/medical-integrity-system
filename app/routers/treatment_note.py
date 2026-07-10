@@ -19,7 +19,7 @@ def create_treatment_note(
     db: Session = Depends(get_db), current: TokenData = Depends(get_current_user)):
     if current.role != "Doctor":
         log_action(db=db, user_id=current.user_id, action="NOTE_CREATION_FAILED",
-                   entity_type="treatment_notes", entity_id=0,
+                   entity_type="treatment_notes", entity_id=note_data.patient_id,
                    result="FAILURE", ip_address=request.client.host)
         raise HTTPException(status_code=403, detail="Not authorized")
 
@@ -34,7 +34,7 @@ def create_treatment_note(
     ).first()
     if not assigned:
         log_action(db=db, user_id=current.user_id, action="NOTE_CREATION_FAILED",
-                   entity_type="treatment_notes", entity_id=0,
+                   entity_type="treatment_notes", entity_id=note_data.patient_id,
                    result="FAILURE", ip_address=request.client.host)
         raise HTTPException(status_code=403, detail="Not assigned to this patient")
 
