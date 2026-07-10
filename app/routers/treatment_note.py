@@ -83,7 +83,7 @@ def get_treatment_notes(
         ).first()
         if not assigned:
             log_action(db=db, user_id=current.user_id, action="NOTE_ACCESS_FAILED",
-                       entity_type="treatment_notes", entity_id=0,
+                       entity_type="treatment_notes", entity_id=patient_id,
                        result="FAILURE", ip_address=request.client.host)
             raise HTTPException(status_code=403, detail="Not assigned to this patient")
 
