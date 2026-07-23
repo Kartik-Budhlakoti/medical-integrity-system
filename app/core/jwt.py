@@ -1,4 +1,4 @@
-from jose import JWTError , jwt
+import jwt
 from datetime import datetime , timezone , timedelta
 from dotenv import load_dotenv
 import os
@@ -18,11 +18,11 @@ def create_access_token(user_id: int , role:str) -> str:
     token_string = jwt.encode(payload , SECRET_KEY, ALGORITHM)
     return token_string
 
-def verify_token(token:str):
+def verify_token(token:str) -> TokenData:
     try:
         payload= jwt.decode(token , SECRET_KEY , algorithms=[ALGORITHM])
         user_id = payload["user_id"]
         role = payload["role"]
         return TokenData(user_id=user_id , role=role)
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(status_code=401 , detail="Token verification failed")
