@@ -5,19 +5,25 @@ from app.core.audit import log_action
 from app.database import get_db
 from app.schemas import bootstrap
 from app.core.security import hash_password
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
-limiter = Limiter(key_func=get_remote_address)
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/bootstrap" , tags=["bootstrap"])
 
 @router.post('/superadmin')
 @limiter.limit("3/minute")
-async def create_super_admin(request : Request , data: bootstrap.BootstrapCreate ,db :Session = Depends(get_db)):
+def create_super_admin(request : Request , data: bootstrap.BootstrapCreate ,db :Session = Depends(get_db)):
 
     existing_superadmin = db.query(User).join(Role).filter(Role.role_name == "SuperAdmin").first()
     if existing_superadmin:
+        log_action(
+                    db=db,
+                    user_id= None,
+                    action= "SYSTEM_INITIALIZATION_FAILED",
+                    entity_type = "users",
+                    entity_id =existing_superadmin.id, 
+                    result= "FAILURE",
+                    ip_address=request.client.host
+                )
         raise HTTPException(status_code=403 , detail="System already initialized")
     
     roles_existing = db.query(Role).first()
@@ -35,6 +41,15 @@ async def create_super_admin(request : Request , data: bootstrap.BootstrapCreate
     superadmin_role = db.query(Role).filter(Role.role_name == "SuperAdmin").first()
 
     if not superadmin_role:
+        log_action(
+            db=db,
+            user_id= None,
+            action= "SYSTEM_INITIALIZATION_FAILED",
+            entity_type = "roles",
+            entity_id =0, 
+            result= "FAILURE",
+            ip_address=request.client.host
+            )
         raise HTTPException(status_code=500 , detail="SuperAdmin role not found")
 
     superadmin = User(
