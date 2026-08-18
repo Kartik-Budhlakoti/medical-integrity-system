@@ -14,7 +14,7 @@ router = APIRouter(prefix="/patients" , tags=["patients"])
 ROLE_UPDATE_PERMISSIONS = {
     "Admin": {"is_admitted","is_emergency","chief_complaint"},
     "Doctor": {"is_emergency","chief_complaint"},
-    "Nurse" : {"height","weight"}
+    "Nurse" : {"height_cm","weight_kg"}
 }
 
 @router.post("/create" , response_model=PatientResponse)
@@ -33,8 +33,8 @@ def patient_creation(request:Request , patient_data : PatientCreate , db : Sessi
     new_patient = Patient(
         full_name = patient_data.full_name,
         dob = patient_data.dob,
-        height = patient_data.height,
-        weight = patient_data.weight,
+        height_cm = patient_data.height_cm,
+        weight_kg = patient_data.weight_kg,
         chief_complaint = patient_data.chief_complaint,
         is_emergency = patient_data.is_emergency
         )
@@ -60,7 +60,7 @@ def get_all_patients(request: Request , db: Session = Depends(get_db), current :
                result="FAILURE", ip_address=request.client.host)
         raise HTTPException(status_code=403, detail="Not authorized")
     if current.role == "Admin":
-        patients = db.query(Patient).all()
+        patients = db.query(Patient).order_by(Patient.created_at.desc()).all()
         log_action(db=db, user_id=current.user_id, action="PATIENTS_ACCESSED",
                    entity_type="patients", entity_id=0,
                    result="SUCCESS", ip_address=request.client.host)
@@ -78,7 +78,7 @@ def get_all_patients(request: Request , db: Session = Depends(get_db), current :
             raise HTTPException(status_code=403, detail="Not assigned to this patient")
         
         patient_ids = [a.patient_id for a in assigned]
-        patients = db.query(Patient).filter(Patient.id.in_(patient_ids)).all()
+        patients = db.query(Patient).filter(Patient.id.in_(patient_ids)).order_by(Patient.created_at.desc()).all()
         log_action(db=db, user_id=current.user_id, action="PATIENTS_ACCESSED",
                 entity_type="patients", entity_id=0,
                 result="SUCCESS", ip_address=request.client.host)

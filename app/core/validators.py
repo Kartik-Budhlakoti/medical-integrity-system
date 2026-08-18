@@ -10,3 +10,16 @@ def password_validator(v : str) -> str:
     if len(v.encode('utf-8')) > 72:
         raise ValueError('Password length is more than maximum size')
     return v
+def height_validator(v: float) -> float:
+    if v is None:
+        return v
+    if not (30 <= v <= 250):
+        raise ValueError('Height must be between 30 and 250 cm')
+    return v
+
+def weight_validator(v: float) -> float:
+    if v is None:
+        return v
+    if not (5.0 <= v <= 300):
+        raise ValueError('Weight must be between 5.0 and 300 kg')
+    return v
