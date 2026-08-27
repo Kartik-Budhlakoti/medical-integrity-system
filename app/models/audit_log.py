@@ -1,4 +1,4 @@
-from sqlalchemy import Column , Integer , String, DateTime , ForeignKey , Enum
+from sqlalchemy import Column , Integer , String, DateTime , ForeignKey , Enum, func
 from datetime import datetime , timezone
 from app.database import Base
 from sqlalchemy.orm import relationship
@@ -12,5 +12,5 @@ class AuditLog(Base):
     entity_id = Column(Integer , nullable=False)
     result = Column(Enum ("SUCCESS", "FAILURE" , name="result_enum"), nullable=False)
     ip_address = Column(String , nullable=True)
-    created_at = Column(DateTime(timezone=True) , default= lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True) , server_default=func.now(), default= lambda: datetime.now(timezone.utc))
     user = relationship("User" , foreign_keys=[user_id])
