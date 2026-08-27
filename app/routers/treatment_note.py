@@ -67,7 +67,7 @@ def get_treatment_notes(
 
     if current.role not in ["Admin", "Doctor", "Nurse"]:
         log_action(db=db, user_id=current.user_id, action="NOTE_ACCESS_FAILED",
-                   entity_type="treatment_notes", entity_id=0,
+                   entity_type="treatment_notes", entity_id=patient_id,
                    result="FAILURE", ip_address=request.client.host)
         raise HTTPException(status_code=403, detail="Not authorized")
 
@@ -87,7 +87,7 @@ def get_treatment_notes(
                        result="FAILURE", ip_address=request.client.host)
             raise HTTPException(status_code=403, detail="Not assigned to this patient")
 
-    treatment_notes = db.query(TreatmentNote).filter(TreatmentNote.patient_id == patient_id).all()
+    treatment_notes = db.query(TreatmentNote).filter(TreatmentNote.patient_id == patient_id).order_by(TreatmentNote.created_at.desc()).all()
     log_action(db=db, user_id=current.user_id, action="NOTE_ACCESSED",
                entity_type="treatment_notes", entity_id=patient_id,
                result="SUCCESS", ip_address=request.client.host)
