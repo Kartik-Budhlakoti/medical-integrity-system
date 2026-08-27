@@ -9,8 +9,19 @@ from app.models.user import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
-def get_current_user(request: Request , token:str = Depends(oauth2_scheme) , db : Session = Depends(get_db)) -> TokenData:
-    token_data =  verify_token(token)
+def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> TokenData:
+    try:
+        token_data = verify_token(token)
+    except HTTPException:
+        log_action(
+            db=db,
+            user_id=None,
+            action="TOKEN_VERIFICATION_FAILED",
+            entity_type="users", entity_id=0,
+            result="FAILURE",
+            ip_address=request.client.host,
+        )
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     user = db.query(User).filter(User.id == token_data.user_id).first()
     if not user or  not user.is_active:
         log_action (
