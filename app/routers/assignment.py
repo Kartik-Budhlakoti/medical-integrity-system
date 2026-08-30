@@ -15,7 +15,7 @@ router = APIRouter(prefix="/assignments", tags=["assignments"])
 def assign(request: Request, assignment_data: AssignmentCreate, db: Session = Depends(get_db), current: TokenData = Depends(get_current_user)):
     if current.role != "Admin":
         log_action(db=db, user_id=current.user_id, action="PATIENT_ASSIGNMENT_FAILED",
-                   entity_type="patient_assignments", entity_id=0,
+                   entity_type="patient_assignments", entity_id=assignment_data.user_id,
                    result="FAILURE", ip_address=request.client.host)
         raise HTTPException(status_code=403, detail="Not authorized")
 
@@ -28,6 +28,9 @@ def assign(request: Request, assignment_data: AssignmentCreate, db: Session = De
         raise HTTPException(status_code=404, detail="User not found")
 
     if user.role.role_name not in ["Doctor", "Nurse"]:
+        log_action(db=db, user_id=current.user_id, action="PATIENT_ASSIGNMENT_FAILED",
+               entity_type="patient_assignments", entity_id=user.id,
+               result="FAILURE", ip_address=request.client.host)
         raise HTTPException(status_code=400, detail="Can only assign Doctors or Nurses")
 
     existing = db.query(PatientAssignment).filter(
@@ -36,8 +39,16 @@ def assign(request: Request, assignment_data: AssignmentCreate, db: Session = De
         PatientAssignment.is_active.is_(True)
     ).first()
     if existing:
+        log_action(db=db, user_id=current.user_id, action="PATIENT_ASSIGNMENT_FAILED",
+               entity_type="patient_assignments", entity_id=existing.id,
+               result="FAILURE", ip_address=request.client.host)
         raise HTTPException(status_code=400, detail="User already assigned to this patient")
-
+    if not user.is_active:
+        log_action(db=db, user_id=current.user_id, action="PATIENT_ASSIGNMENT_FAILED",
+                      entity_type="patient_assignments", entity_id=user.id,
+                      result="FAILURE", ip_address=request.client.host) 
+        raise HTTPException(status_code=400, detail="Cannot assign a deactivated user")
+    
     new_assignment = PatientAssignment(
         patient_id=assignment_data.patient_id,
         user_id=assignment_data.user_id,
@@ -50,3 +61,33 @@ def assign(request: Request, assignment_data: AssignmentCreate, db: Session = De
                entity_type="patient_assignments", entity_id=new_assignment.id,
                result="SUCCESS", ip_address=request.client.host)
     return new_assignment
+
+@router.post("/{assignment_id}/unassign", response_model=AssignmentResponse)
+def unassign(assignment_id: int,request: Request, db: Session = Depends(get_db), current: TokenData = Depends(get_current_user)):
+    if current.role != "Admin":
+        log_action(db=db, user_id=current.user_id, action="PATIENT_UNASSIGNMENT_FAILED",
+                   entity_type="patient_assignments", entity_id=assignment_id,
+                   result="FAILURE", ip_address=request.client.host)
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    assignment = db.query(PatientAssignment).filter(PatientAssignment.id == assignment_id).first()
+    if not assignment:
+        raise HTTPException(status_code=404,detail="Assignment not found")
+
+    if not assignment.is_active:
+        log_action(db=db, user_id=current.user_id, action="PATIENT_UNASSIGNMENT_FAILED",
+                   entity_type="patient_assignments", entity_id=assignment_id,
+                   result="FAILURE", ip_address=request.client.host)
+        raise HTTPException(status_code=400, detail="Assignment is already inactive")
+
+    assignment.is_active = False
+    db.commit()
+    db.refresh(assignment)
+
+    log_action(db=db, user_id=current.user_id, action="PATIENT_UNASSIGNED",
+               entity_type="patient_assignments", entity_id=assignment_id,
+               result="SUCCESS", ip_address=request.client.host)
+    return assignment
+    
+                            
+    
