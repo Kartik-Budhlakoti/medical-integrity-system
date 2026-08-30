@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Literal
 
 class Token(BaseModel):
     access_token: str
@@ -6,4 +7,4 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     user_id: int
-    role: str
+    role: Literal["SuperAdmin","Admin", "Doctor","Nurse"]
