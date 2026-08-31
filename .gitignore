@@ -7,3 +7,4 @@ venv/
 *.egg-info/
 .pytest_cache/
 uploads/
+backup_before_migration.sql
