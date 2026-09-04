@@ -6,11 +6,12 @@ from app.routers.patient import router as patient_router
 from app.routers.assignment import router as assignment_router
 from app.routers.file import router as file_router
 from app.routers.treatment_note import router as treatment_note_router
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from app.routers.nursing_note import router as nursing_note_router
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 import app.models
+from app.core.limiter import limiter
 
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -33,7 +34,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SecurityHeadersMiddleware)
@@ -45,6 +45,7 @@ app.include_router(patient_router)
 app.include_router(assignment_router)
 app.include_router(file_router)
 app.include_router(treatment_note_router)
+app.include_router(nursing_note_router)
 
 @app.get("/health")
 def health_check():
