@@ -1,10 +1,15 @@
-from pydantic import BaseModel , EmailStr , ConfigDict , field_validator, model_validator
+from pydantic import BaseModel ,EmailStr , ConfigDict , field_validator, model_validator
 from app.core.validators import password_validator
+from typing import Optional , Literal
+
+Specialty = Literal["General Medicine", "Cardiology", "Orthopedics", "Neurology", "Pediatrics", "Emergency Medicine"]
+
 class UserCreate(BaseModel):
     full_name : str
     email : EmailStr
     password : str
     role_id : int
+    specialty: Optional[Specialty] = None    
     @field_validator('password')
     def validate_password(cls , v):
         return password_validator(v)
@@ -15,7 +20,11 @@ class UserResponse(BaseModel):
     full_name : str
     email: EmailStr
     role_id : int
+    specialty: Optional[Specialty] = None    
     is_active : bool
+
+class SpecialtyUpdate(BaseModel):
+    updated_specialty : Specialty
 
 class UserLogin(BaseModel):
     email : EmailStr

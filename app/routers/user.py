@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends , HTTPException , Request 
 
-from app.schemas.user import UserResponse , UserCreate 
+from app.schemas.user import UserResponse , UserCreate ,SpecialtyUpdate , Specialty
 from app.schemas.token import TokenData 
 from app.database import get_db
 from sqlalchemy.orm import Session 
@@ -8,6 +8,7 @@ from app.core.security import hash_password
 from app.models.user import User , Role
 from app.core.dependencies import get_current_user
 from app.core.audit import log_action
+from typing import List , Optional
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -28,6 +29,13 @@ def create_user(request : Request,user_data : UserCreate , db: Session = Depends
     role = db.query(Role).filter(Role.id == user_data.role_id).first()
     if not role: 
         raise HTTPException(status_code=400 , detail="Invalid role")
+
+    if user_data.specialty is not None and role.role_name != "Doctor":
+        log_action(db=db, user_id=current.user_id, action="USER_CREATION_FAILED",
+                       entity_type="roles", entity_id=role.id,
+                       result="FAILURE", ip_address=request.client.host)
+        raise HTTPException(status_code=400 , detail="Specialty can only be set for Doctors")
+
 
     if current.role == "Admin" and role.role_name not in ["Doctor", "Nurse"]:
         log_action(db=db, user_id=current.user_id, action="PRIVILEGE_ESCALATION_ATTEMPT",
@@ -58,7 +66,8 @@ def create_user(request : Request,user_data : UserCreate , db: Session = Depends
         full_name = user_data.full_name,
         email = user_data.email ,
         pass_hash = hash_password(user_data.password),
-        role_id = user_data.role_id
+        role_id = user_data.role_id,
+        specialty = user_data.specialty
     )
     db.add(new_user)
     db.commit()
@@ -131,3 +140,50 @@ def deactivate_user(user_id:int, request : Request, db: Session = Depends(get_db
                        result="SUCCESS", ip_address=request.client.host)
 
     return user
+
+@router.patch("/{user_id}/specialty", response_model=UserResponse)
+def specialty_update(user_id: int, specialty_data: SpecialtyUpdate, request: Request,
+                      db: Session = Depends(get_db), current: TokenData = Depends(get_current_user)):
+    if current.role != "Admin":
+        log_action(db=db, user_id=current.user_id, action="SPECIALTY_UPDATE_FAILED",
+                   entity_type="users", entity_id=user_id,
+                   result="FAILURE", ip_address=request.client.host)
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.role.role_name != "Doctor":
+        log_action(db=db, user_id=current.user_id, action="SPECIALTY_UPDATE_FAILED",
+                   entity_type="users", entity_id=user.id,
+                   result="FAILURE", ip_address=request.client.host)
+        raise HTTPException(status_code=400, detail="Specialty can only be set for Doctor accounts")
+
+    user.specialty = specialty_data.updated_specialty
+    db.commit()
+    db.refresh(user)
+
+    log_action(db=db, user_id=current.user_id, action="SPECIALTY_UPDATED",
+               entity_type="users", entity_id=user.id,
+               result="SUCCESS", ip_address=request.client.host)
+    return user
+
+@router.get("/doctors" , response_model=List[UserResponse])
+def get_specialised_doctors(request: Request,specialty: Optional[Specialty] = None,db: Session = Depends(get_db), current: TokenData = Depends(get_current_user)):
+    if current.role not in ["SuperAdmin","Admin"]:
+        log_action(db=db, user_id=current.user_id, action="DOCTORS_LIST_FAILED",
+                           entity_type="users", entity_id=0,
+                           result="FAILURE", ip_address=request.client.host)
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    users = db.query(User).join(Role).filter(Role.role_name == "Doctor", User.is_active.is_(True))
+
+    if specialty is not None:
+        users = users.filter(User.specialty == specialty)
+    doctors = users.order_by(User.full_name).all()
+
+    log_action(db=db, user_id=current.user_id, action="DOCTORS_LISTED",
+                               entity_type="users", entity_id=0,
+                               result="SUCCESS", ip_address=request.client.host)
+    return doctors
