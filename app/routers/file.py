@@ -16,10 +16,8 @@ from typing import Annotated , List
 from fastapi import Form , Response
 from urllib.parse import quote
 from app.core.limiter import limiter
+from app.core import storage
 
-
-UPLOAD_DIR= os.getenv("UPLOAD_DIR" , "uploads")
-os.makedirs(UPLOAD_DIR , exist_ok=True)
 
 MAX_FILE_SIZE = 50 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".dcm", ".jpg" , ".jpeg" , ".png" , ".pdf"}
@@ -77,19 +75,17 @@ def upload_file(
         raise HTTPException(status_code=400, detail="File type not allowed")
     
     unique_filename = f"{uuid.uuid4()}{file_extension}"
-    file_path = os.path.join(UPLOAD_DIR, unique_filename)
-
-    with open(file_path , "wb") as f :
-        f.write(file_bytes)
 
     hash_value = compute_sha256(file_bytes)
     try:
+        storage.upload_bytes(unique_filename, file_bytes)
+        
         file_record = FileModel(
             patient_id = patient_id,
             uploaded_by_id = current.user_id,
             file_type = file_type,
             file_name = original_filename,
-            file_path = file_path
+            file_path = unique_filename
         )
         db.add(file_record)
         db.flush()
@@ -103,8 +99,13 @@ def upload_file(
         db.refresh(file_record)
     except Exception:
         db.rollback()
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        try:
+            storage.delete_bytes(unique_filename)
+        except Exception:
+            pass
+        log_action(db=db, user_id=current.user_id, action="FILE_UPLOAD_FAILED",
+               entity_type="files", entity_id=patient_id,
+               result="FAILURE", ip_address=request.client.host)
         raise HTTPException(status_code=500 , detail="File upload failed, please try again")
     log_action(
             db=db,
@@ -156,9 +157,13 @@ def get_file(request:Request ,file_id : int,
                     entity_type="files", entity_id=file_record.id,
                     result="FAILURE", ip_address=request.client.host)
             raise HTTPException(status_code=403, detail="Not assigned to this patient")
-        
-    with open(file_record.file_path , "rb") as f:    
-        file_bytes = f.read()
+    try:  
+        file_bytes = storage.download_bytes(file_record.file_path)
+    except Exception:
+        log_action(db=db, user_id=current.user_id, action="FILE_RETRIEVAL_FAILED",
+               entity_type="files", entity_id=file_record.id,
+               result="FAILURE", ip_address=request.client.host)
+        raise HTTPException(status_code=500, detail="Unable to retrieve file")
 
     hash_value = compute_sha256(file_bytes)
 
