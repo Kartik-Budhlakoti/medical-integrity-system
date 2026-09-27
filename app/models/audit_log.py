@@ -6,7 +6,7 @@ from sqlalchemy.orm import relationship
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     id = Column(Integer , primary_key=True , index=True)
-    user_id = Column(Integer , ForeignKey("users.id") , nullable=True)
+    user_id = Column(Integer , ForeignKey("users.id"),index=True , nullable=True)
     action = Column(String , nullable=False)
     entity_type = Column(String , nullable=False)
     entity_id = Column(Integer , nullable=False)
