@@ -1,0 +1,17 @@
+.env
+.env.backup
+*.backup
+.git/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+uploads/
+backup_before_migration.sql
+downloaded_*.pdf
+phase*_test.pdf
+docs/
+*.md
