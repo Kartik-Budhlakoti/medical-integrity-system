@@ -11,6 +11,7 @@ Real trade-offs I made on this project, and why, written down so I don't have to
 - JWTs are stateless — no server-side session tracking. That means if I change a password or deactivate an account, any token issued before that keeps working until it naturally expires. Accepting that — real session tracking felt like more architecture than this project needs.
 - Filenames are UUIDs on purpose, so nobody can guess or enumerate them.
 - Swapped `passlib` and `python-jose` for direct `bcrypt` and `PyJWT` — both were unmaintained, and `python-jose` had an unpatched CVE. Wasn't optional, needed doing.
+-Invalidated files stay in B2 for a grace period instead of being deleted right away. Same logic as the append-only notes — I’d rather be able to recover from a wrong invalidation, or show nothing was tampered with after the fact, than destroy the file the instant it’s flagged invalid. The API already blocks normal access to it immediately; actual deletion from storage is meant to happen later, on purpose.
 
 ## Mid-build
 
@@ -35,6 +36,11 @@ Real trade-offs I made on this project, and why, written down so I don't have to
 - Pinned `redis` to the 6.x line instead of grabbing the newest 8.x release. 8.x had a live, dated compatibility issue with the rate-limiting library I'm using — newest isn't always safest.
 - Kept Valkey even though a single-instance deployment doesn't really need shared rate-limit storage yet. Decided that on purpose, for the practice, not by default.
 - Docker Compose is strictly for running things locally while I develop — never how this actually gets deployed. Realizing that early saved me from a lot of confused assumptions later.
+- Multi-stage Dockerfile, on purpose: build tools stay isolated in a throwaway first stage, only the finished venv and real code make it into the final image. Smaller image, smaller attack surface — matters more given the direction I'm taking this project.
+- Chose the slim base image over alpine specifically because psycopg2 has known install friction against alpine's C library. Slightly bigger image, avoided a real, well-documented headache instead.
+- Postgres and Valkey both pinned to major-version-only tags, not an exact patch and not a floating "latest" — same floor-without-ceiling logic I already used for the Python package pins.
+- Postgres's port is never published to the host in Compose, on purpose. The only way in is through the container itself, which is actually the more secure path, not a limitation I'm accepting.
+- The API container doesn't mount a live folder from my host — it builds as a sealed snapshot, matching what will actually run later,rather than being optimized for live-reloading convenience. Worth reconsidering once Docker's basic proof is further along, not settled forever.
 
 ## Audit logging
 
