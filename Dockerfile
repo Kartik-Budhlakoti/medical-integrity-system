@@ -7,7 +7,7 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir -r requirements.txt
 
-from python:3.14-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
