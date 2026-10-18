@@ -1,5 +1,5 @@
 from app.database import Base
-from sqlalchemy import String, Column, Integer, DateTime, ForeignKey, Float,Index,CheckConstraint, func
+from sqlalchemy import String, Column, Integer, DateTime, ForeignKey,Float,CheckConstraint, func
 from datetime import datetime , timezone
 from sqlalchemy.orm import relationship
 
