@@ -30,9 +30,9 @@ def fresh_test_database():
     local runs start from the same empty state CI gets automatically from
     its throwaway container. Connects to the always-present `postgres`
     system database to do it, since you can't drop a database you're
-    connected to. Refuses to run at all if DATABASE_URL points at the
-    real local dev database — that's the one thing standing between a
-    forgotten `export` and losing real data.
+    connected to. Refuses to run unless DATABASE_URL points at a *_test
+    database on localhost — that's the one thing standing between a
+    forgotten `export` (or a remote URL like Neon) and losing real data.
     """
     test_url = make_url(os.environ["DATABASE_URL"])
     if test_url.host not in SAFE_HOSTS or not (test_url.database or "").endswith("_test"):
