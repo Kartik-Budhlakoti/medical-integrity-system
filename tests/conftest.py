@@ -10,18 +10,33 @@ from app.main import app
 
 SAFE_HOSTS = {"localhost", "127.0.0.1"}
 
+MODULE_ORDER = ["test_auth.py", "test_user.py"]
+
 def pytest_collection_modifyitems(items):
     """
-    Runs any test marked @pytest.mark.first before everything else in
-    the suite, regardless of which file it's in or what it's named.
-    Needed because test_assignment.py — already on the roadmap — sorts
-    alphabetically before test_auth.py, so relying on file order alone
-    to put the rate-limit test first was already broken the moment that
-    file gets created.
+    Controls the order tests run in.
+
+    1. Any test marked @pytest.mark.first runs before everything else
+       (the login rate-limit test needs the real limiter before
+       anything switches it off).
+    2. Then the files in MODULE_ORDER. test_auth.py must come first:
+       its bootstrap tests need an empty database and create the
+       superadmin every other file logs in as. test_user.py comes next
+       because its last test expects exactly two Admin accounts.
+    3. Every other test file runs after those, alphabetically.
+
+    Python's sort is stable, so tests inside one file keep the order
+    they are written in.
     """
-    first_tests = [item for item in items if item.get_closest_marker("first")]
-    other_tests = [item for item in items if not item.get_closest_marker("first")]
-    items[:] = first_tests + other_tests
+    def rank(item):
+        if item.get_closest_marker("first"):
+            return -1
+        name = item.path.name
+        if name in MODULE_ORDER:
+            return MODULE_ORDER.index(name)
+        return len(MODULE_ORDER)
+
+    items.sort(key=rank)
     
 @pytest.fixture(scope="session", autouse=True)
 def fresh_test_database():
