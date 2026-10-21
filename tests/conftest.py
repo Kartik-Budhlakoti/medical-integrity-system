@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.engine.url import make_url
 
+from app.core import storage
 from app.core.limiter import limiter
 from app.database import Base, SessionLocal, engine
 from app.main import app
@@ -322,3 +323,24 @@ def watch_audit(db_session):
             return row if row is not None and row.id > before_id else None
         return _check
     return _watch
+
+
+@pytest.fixture(autouse=True)
+def upload_dir(monkeypatch, tmp_path):
+    """
+    Runs for EVERY test. Forces file storage to the local disk, in a
+    throwaway folder, whatever STORAGE_BACKEND says.
+
+    Why: app/core/storage.py loads your .env when it is imported, and
+    that .env may well say STORAGE_BACKEND=b2. Without this, one upload
+    test would write to the real Backblaze bucket. With it, tests can
+    never touch B2, and no `uploads/` folder is left in the project.
+
+    Tests that want to look inside the storage folder can ask for
+    `upload_dir`: it is a pathlib.Path.
+    """
+    folder = tmp_path / "uploads"
+    folder.mkdir()
+    monkeypatch.setattr(storage, "STORAGE_BACKEND", "local")
+    monkeypatch.setattr(storage, "UPLOAD_DIR", str(folder))
+    return folder
