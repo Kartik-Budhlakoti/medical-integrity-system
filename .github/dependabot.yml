@@ -1,0 +1,48 @@
+version: 2
+updates:
+  # Python libraries from requirements.txt
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 7        # wait a week after a release before proposing it
+    groups:
+      python-minor-patch:    # one PR for all small updates; majors stay separate
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # boto3: no version-update PRs until pinned and retested against Backblaze
+      - dependency-name: "boto3"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+      # redis: stay below the next major on purpose (see decisions log)
+      - dependency-name: "redis"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "chore"
+
+# workflow actions (keeps the SHA pins current)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore"
+
+# base image in the Dockerfile
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore"
