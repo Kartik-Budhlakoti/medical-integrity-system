@@ -21,6 +21,12 @@ updates:
       # redis: stay below the next major on purpose (see decisions log)
       - dependency-name: "redis"
         update-types: ["version-update:semver-major"]
+      # SQLAlchemy 2.1 makes psycopg 3 the default for postgresql:// URLs; we use psycopg2.
+      # Stay on 2.0.x until migrate on purpose.
+      - dependency-name: "SQLAlchemy"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
     commit-message:
       prefix: "chore"
 
