@@ -25,4 +25,4 @@ jobs:
           scanners: vuln,secret
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          exit-code: "0"
+          exit-code: "1"
