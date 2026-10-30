@@ -38,7 +38,6 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://karma:1234567890@localhost:5432/medical_integrity_test
-      SECRET_KEY: 2926a35a368310abdb4ceb201300864d
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: "30"
       STORAGE_BACKEND: local
@@ -51,6 +50,11 @@ jobs:
           python-version: "3.14"
       - name: requirements-installation
         run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: generate-test-secret-key
+        run: |
+          key="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+          echo "::add-mask::$key"
+          echo "SECRET_KEY=$key" >> "$GITHUB_ENV"
       - name: actual-tests
         run: pytest -v
       - name: migration_check
