@@ -19,7 +19,7 @@ MODULE_ORDER = ["test_auth.py", "test_user.py"]
 
 TEST_PASSWORD = "TestPass123!"
 SUPERADMIN_EMAIL = "superadmin@example.com"
-
+TEST_BOOTSTRAP_TOKEN = "test-bootstrap-token"
 
 def pytest_collection_modifyitems(items):
     """
@@ -175,12 +175,13 @@ def superadmin_ready(create_test_tables):
     finally:
         db.close()
     if not exists:
-        with TestClient(app) as c:
+        with pytest.MonkeyPatch.context() as mp, TestClient(app) as c:
+            mp.setenv("BOOTSTRAP_TOKEN", TEST_BOOTSTRAP_TOKEN)
             response = c.post("/bootstrap/superadmin", json={
                 "full_name": "Test SuperAdmin",
                 "email": SUPERADMIN_EMAIL,
                 "password": TEST_PASSWORD,
-            })
+            }, headers={"X-Bootstrap-Token": TEST_BOOTSTRAP_TOKEN})
         assert response.status_code == 200, (
             f"could not create the SuperAdmin account: {response.status_code} {response.text}"
         )

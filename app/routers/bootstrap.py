@@ -1,3 +1,5 @@
+import os 
+import secrets
 from fastapi import APIRouter , Depends , HTTPException , Request
 from sqlalchemy.orm import Session
 from app.models.user import Role , User
@@ -12,7 +14,14 @@ router = APIRouter(prefix="/bootstrap" , tags=["bootstrap"])
 @router.post('/superadmin')
 @limiter.limit("3/minute")
 def create_super_admin(request : Request , data: bootstrap.BootstrapCreate ,db :Session = Depends(get_db)):
-
+    expected = os.getenv("BOOTSTRAP_TOKEN", "")
+    given = request.headers.get("X-Bootstrap-Token", "")
+    if expected == "" :    
+        raise HTTPException(status_code=403, detail="Invalid setup token")
+    
+    if not secrets.compare_digest(given.encode(), expected.encode()):
+        raise HTTPException(status_code=403 , detail="Invalid setup token")
+    
     existing_superadmin = db.query(User).join(Role).filter(Role.role_name == "SuperAdmin").first()
     if existing_superadmin:
         log_action(
