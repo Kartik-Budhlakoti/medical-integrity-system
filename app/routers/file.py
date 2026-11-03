@@ -21,6 +21,14 @@ from app.core import storage
 
 MAX_FILE_SIZE = 50 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".dcm", ".jpg" , ".jpeg" , ".png" , ".pdf"}
+FILE_SIGNATURES = {
+       ".pdf": (0, b"%PDF-"),
+       ".png": (0, b"\x89PNG\r\n\x1a\n"),
+       ".jpg": (0, b"\xff\xd8\xff"),
+       ".jpeg": (0, b"\xff\xd8\xff"),
+       ".dcm": (128, b"DICM"),
+}
+
 
 router = APIRouter(prefix="/files" , tags=["files"])
 
@@ -73,7 +81,11 @@ def upload_file(
 
     if file_extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="File type not allowed")
-    
+
+    offset, signature = FILE_SIGNATURES[file_extension]
+    if not file_bytes.startswith(signature, offset):
+        raise HTTPException(status_code=400, detail="File contents do not match the file type")
+
     unique_filename = f"{uuid.uuid4()}{file_extension}"
 
     hash_value = compute_sha256(file_bytes)
