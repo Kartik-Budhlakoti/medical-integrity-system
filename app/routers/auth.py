@@ -52,6 +52,17 @@ def login(request : Request ,credentials:UserLogin , db: Session = Depends(get_d
             ip_address=request.client.host
         )
         raise HTTPException(status_code=401 , detail="Invalid credentials")
+    if not user.is_active:
+        log_action(
+                db=db,
+                user_id= user.id,
+                action= "LOGIN_FAILED",
+                entity_type = "users",
+                entity_id = user.id,
+                result= "FAILURE",
+                ip_address=request.client.host
+        )
+        raise HTTPException(status_code=401 , detail="Invalid credentials")
     token = create_access_token(user_id=user.id , role=user.role.role_name)
     log_action(
             db=db,

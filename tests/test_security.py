@@ -222,13 +222,6 @@ def test_the_database_stores_only_the_hash(client, db_session, make_user):
 # Account rules at the door
 # ======================================================================
 
-# KNOWN BUG, pinned as "expected to fail". A deactivated user can still
-# log in: they get a token and the audit log says LOGIN_SUCCESS. The token
-# is useless afterwards (every other route refuses it, see
-# test_user.py::test_deactivated_user_token_rejected), so this is a
-# correctness and logging problem, not a way in. Fix: refuse login for an
-# inactive user (401, same message as a wrong password), then delete the marker.
-@pytest.mark.xfail(strict=True, reason="a deactivated user can still log in and get a token")
 def test_a_deactivated_user_cannot_log_in(client, make_user, superadmin):
     user = make_user("Nurse")
     client.post(f"/users/{user['id']}/deactivate", headers=superadmin["headers"])
@@ -236,6 +229,31 @@ def test_a_deactivated_user_cannot_log_in(client, make_user, superadmin):
     response = client.post("/auth/login", json={"email": user["email"], "password": TEST_PASSWORD})
 
     assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid credentials"
+    assert "access_token" not in response.json()
+
+
+def test_a_deactivated_user_gets_the_same_answer_with_a_wrong_password(client, make_user, superadmin):
+    user = make_user("Nurse")
+    client.post(f"/users/{user['id']}/deactivate", headers=superadmin["headers"])
+
+    right = client.post("/auth/login", json={"email": user["email"], "password": TEST_PASSWORD})
+    wrong = client.post("/auth/login", json={"email": user["email"], "password": TEST_PASSWORD + "x"})
+
+    assert right.status_code == wrong.status_code == 401
+    assert right.json() == wrong.json()
+
+
+def test_a_refused_login_for_a_deactivated_user_is_logged_as_a_failure(client, make_user, superadmin, watch_audit):
+    user = make_user("Nurse")
+    client.post(f"/users/{user['id']}/deactivate", headers=superadmin["headers"])
+    failed = watch_audit("LOGIN_FAILED", user_id=user["id"])
+    succeeded = watch_audit("LOGIN_SUCCESS", user_id=user["id"])
+
+    client.post("/auth/login", json={"email": user["email"], "password": TEST_PASSWORD})
+
+    assert failed() is not None
+    assert succeeded() is None
 
 
 # KNOWN BUG, pinned as "expected to fail". Two emails that differ only in
