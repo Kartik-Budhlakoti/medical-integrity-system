@@ -20,12 +20,17 @@ from app.models.file import FileHash
 # Every download re-checks the file's SHA-256 against the hash saved at
 # upload. A mismatch means someone changed the stored file: the file is
 # switched off and TAMPER_DETECTED is logged.
-#
+
+
 # Storage is always the local disk here. conftest.py's `upload_dir`
 # fixture points it at a throwaway folder for every test, so real
 # Backblaze B2 is never touched.
 
 CONTENT = b"%PDF-1.4 pretend scan data"
+PDF_BYTES = b"%PDF-1.7\n" + b"x" * 20
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"x" * 20
+JPEG_BYTES = b"\xff\xd8\xff\xe0" + b"x" * 20
+DICOM_BYTES = b"\x00" * 128 + b"DICM" + b"x" * 20
 
 
 def upload(client, headers, patient_id, name="scan.pdf", data=CONTENT, file_type="X-ray"):
@@ -140,9 +145,21 @@ def test_a_filename_cannot_change_where_the_file_is_stored(client, staff, scan_p
     assert not (upload_dir.parent.parent / "evil.pdf").exists()
 
 
-@pytest.mark.parametrize("name", ["scan.pdf", "SCAN.PDF", "photo.jpg", "photo.JPG", "photo.jpeg", "photo.png", "image.dcm"])
-def test_allowed_file_types_are_accepted_in_any_letter_case(name, client, staff, scan_patient):
-    response = upload(client, staff["doctor"]["headers"], scan_patient["id"], name=name)
+@pytest.mark.parametrize(
+    "name, data",
+    [
+        ("scan.pdf", PDF_BYTES),
+        ("SCAN.PDF", PDF_BYTES),
+        ("photo.jpg", JPEG_BYTES),
+        ("photo.JPG", JPEG_BYTES),
+        ("photo.jpeg", JPEG_BYTES),
+        ("photo.png", PNG_BYTES),
+        ("image.dcm", DICOM_BYTES),
+    ],
+    ids=["pdf", "pdf-capitals", "jpg", "jpg-capitals", "jpeg", "png", "dcm"],
+)
+def test_allowed_file_types_are_accepted_in_any_letter_case(name, data, client, staff, scan_patient):
+    response = upload(client, staff["doctor"]["headers"], scan_patient["id"], name=name, data=data)
 
     assert response.status_code == 200
     assert response.json()["file_path"].endswith("." + name.rsplit(".", 1)[1].lower())
@@ -158,16 +175,30 @@ def test_other_file_types_are_rejected(name, client, db_session, staff, scan_pat
     assert list(upload_dir.iterdir()) == []
 
 
-# KNOWN LIMITATION, already in known-issues.md ("File upload validation
-# only checks the extension"). Pinned as "expected to fail" so it shows up
-# in `pytest -rx` until the content check exists; delete the marker then.
-@pytest.mark.xfail(strict=True, reason="only the file extension is checked, not the contents")
-def test_a_file_whose_contents_do_not_match_its_extension_is_rejected(client, staff, scan_patient):
-    windows_program = b"MZ\x90\x00\x03\x00\x00\x00"
-
-    response = upload(client, staff["doctor"]["headers"], scan_patient["id"], name="invoice.pdf", data=windows_program)
+@pytest.mark.parametrize(
+    "name, data",
+    [
+        ("invoice.pdf", b"MZ\x90\x00\x03\x00\x00\x00"),
+        ("photo.png", PDF_BYTES),
+        ("photo.jpg", PNG_BYTES),
+        ("scan.dcm", b"\x00" * 200),
+        ("scan.dcm", b"DICM"),
+    ],
+    ids=["program-named-pdf", "pdf-named-png", "png-named-jpg", "dcm-without-marker", "dcm-marker-at-wrong-offset"],
+)
+def test_contents_that_do_not_match_the_extension_are_rejected(
+    name, data, client, db_session, staff, scan_patient, upload_dir
+):
+    response = upload(client, staff["doctor"]["headers"], scan_patient["id"], name=name, data=data)
 
     assert response.status_code == 400
+    assert response.json()["detail"] == "File contents do not match the file type"
+    assert file_count(db_session, scan_patient["id"]) == 0
+    assert list(upload_dir.iterdir()) == []
+
+
+def test_every_allowed_extension_has_a_content_signature():
+    assert set(file_router.FILE_SIGNATURES) == file_router.ALLOWED_EXTENSIONS
 
 
 def test_the_size_limit_is_50_megabytes():
@@ -181,8 +212,8 @@ def test_a_file_exactly_at_the_size_limit_is_accepted_and_one_byte_more_is_not(
     # 50 MB through the app.
     monkeypatch.setattr(file_router, "MAX_FILE_SIZE", 100)
 
-    at_limit = upload(client, staff["doctor"]["headers"], scan_patient["id"], data=b"x" * 100)
-    too_big = upload(client, staff["doctor"]["headers"], scan_patient["id"], data=b"x" * 101)
+    at_limit = upload(client, staff["doctor"]["headers"], scan_patient["id"], name="scan.pdf", data=b"%PDF-" + b"x" * 95)
+    too_big = upload(client, staff["doctor"]["headers"], scan_patient["id"], name="scan.pdf", data=b"%PDF-" + b"x" * 96)
 
     assert at_limit.status_code == 200
     assert too_big.status_code == 413
