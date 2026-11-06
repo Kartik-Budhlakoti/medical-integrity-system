@@ -1,14 +1,18 @@
 # Known Issues
 
-Things that are still broken or deferred, and things worth remembering before I touch this code again. If something isn't here, I either fixed it or haven't found it yet. Every route has tests now. 16 known bugs have tests marked "expected to fail" — `pytest -rx` lists them, and when I fix one, its test turns red until I delete the marker.
+Things that are still broken or deferred, and things worth remembering before I touch this code again. If something isn't here, I either fixed it or haven't found it yet. Every route has tests now. 14 known bugs have tests marked "expected to fail" — `pytest -rx` lists them, and when I fix one, its test turns red until I delete the marker.
 
-## Fix before it goes public
+## On Render (live since 2026-11-04)
 
-- **Bootstrap route.** `POST /bootstrap/superadmin` needs no login, so whoever calls it first becomes SuperAdmin. After the first deploy I call it myself before sharing the URL.
-- **Uploads are only checked by file extension.** A `.pdf` name is trusted at face value; nothing looks at the actual bytes. Saving it for the security pass.
-- **Deactivated accounts can still log in.** They get a token, but it's rejected everywhere else. The audit log still says `LOGIN_SUCCESS`, and the person learns their password was right.
+The timings here are single measurements from my laptop against the real service, not averages.
+
 - **`/docs` doesn't load.** My `Content-Security-Policy` header blocks the Swagger UI files it pulls from a CDN (checked in a real browser). Either I turn docs off in production on purpose, or I allow those hosts.
-- **The app sees the wrong client IP on Render.** Rate limits and audit rows use the address the app sees. On a throwaway Render service that was an internal address of Render's proxy, so with uvicorn's defaults every visitor would share one rate-limit bucket and every audit row would show the same IP. Trusting everyone (`--forwarded-allow-ips="*"`) is worse: uvicorn then takes the leftmost address in `X-Forwarded-For`, and Render keeps whatever the visitor sends there, so it can be faked. The requests also passed through Cloudflare, so trusting only Render's internal address gives a Cloudflare address, not the visitor's. Replaying one measured header chain locally, trusting Render's internal range plus the Cloudflare range that held the edge address gave the real visitor address. That Render sits behind Cloudflare is something I observed, not something Render promises. I still have to confirm the fix on the first deploy by checking `ip_address` in `audit_logs`.
+- **What I tested on the live service.** Creating the first SuperAdmin, logging in, creating a user and a patient, uploading a file to Backblaze and downloading it again (the SHA-256 hash matched), and checking that a deactivated account gets a 401. After that I deleted `BOOTSTRAP_TOKEN` from Render and redeployed, and the old token now gets a 403. Login took about 2 s, upload 1.7 s and download 0.5 s. Login is slow because Render's free CPU is small and the password check (bcrypt at cost 12) is deliberately heavy.
+- **The app now logs the visitor's real IP address.** Behind Render's proxy it used to see only Render's own internal address. `scripts/start.sh` now tells uvicorn which proxies it may believe about who is calling: `127.0.0.1`, `10.0.0.0/8` and Cloudflare's published address ranges. I checked it with two requests, a normal one and one with a faked `X-Forwarded-For: 6.6.6.6` header. Both were logged in `audit_logs` with my real public address.
+- **That trusted-proxy list needs upkeep.** The Cloudflare ranges are a copy of cloudflare.com/ips from 2026-11-04, and I have to refresh them by hand. If Cloudflare adds a range and I don't, the app would log a Cloudflare address instead of the visitor's. `10.0.0.0/8` is also a big block to trust; it's there because Render's internal hop showed up as a 10.x address. And that Render sits behind Cloudflare is something I saw, not something Render promises.
+- **The first request after a long idle took 22.9 s.** Render puts the free service to sleep after 15 minutes without traffic and wakes it on the next request. I measured this once, and I didn't separate Render waking up from Neon waking up. Someone opening the demo cold should expect to wait. The next request took 0.25 s.
+- **Rate limits start over when the service restarts or wakes up.** Render has no `VALKEY_URL`, so the limiter keeps its counters in memory. That works with one worker, but a restart or a sleep wipes them.
+- **My smoke test left test data in the live database.** Two deactivated throwaway Admins, two fake patients and two small files in the bucket. The audit log is append-only, so those rows stay.
 
 ## Smaller bugs
 
@@ -16,11 +20,12 @@ Things that are still broken or deferred, and things worth remembering before I 
 - Treatment notes accept blank text. Nursing notes reject it.
 - A correctly signed token with odd contents (no role, unknown role) gives a 500 instead of a 401. It needs the signing key, so low risk. A token with no expiry is also accepted.
 - Emails that differ only in capital letters (`A@x.com` vs `a@x.com`) are separate accounts.
-- Login is much faster for an email that doesn't exist, so someone timing it could tell which emails are real.
+- Login is much faster for an email that doesn't exist, so someone timing it could tell which emails are real. On Render an unknown email got its 401 in about 0.25 s and a known one took about 2.0 s (one measurement each).
 - When the tamper check fails, the file is switched off but doesn't record why. The audit row does.
 - `height_cm` and `weight_kg` can't be blank, so I can't create a patient in an emergency without real numbers. Fixing it means deciding how emergency admission should work, not loosening a constraint.
 - Three spots check first and write second with no lock: bootstrap (two first callers), deactivating the last Admin, and assigning the same doctor twice (no unique index either). Low odds. I read these from the code and never reproduced them.
-- Small stuff: blood pressure is free text, lists have no paging, the password special-character list is narrow, the "not authorized to update" error prints a Python set, zero-byte uploads are accepted.
+- The 50 MB upload limit is checked only after the whole file has been read into memory, so a too-big upload still uses the memory first. Render's free plan has 512 MiB.
+- Small stuff: blood pressure is free text, lists have no paging, the password special-character list is narrow, the "not authorized to update" error prints a Python set.
 
 ## Decisions that have a cost (tests pin today's behaviour)
 
@@ -29,10 +34,11 @@ Things that are still broken or deferred, and things worth remembering before I 
 - "Doesn't exist" (404) and "isn't yours" (403) are different answers, so they can tell which patient numbers exist.
 - Changing a password doesn't end sessions that already exist (stateless JWT). Deactivating an account does, because every request looks the user up.
 - Notes can't be edited or deleted. A wrong note stays; a correction is a new note with no link to the first.
+- The upload check only looks at the first bytes of a file. A file that starts like a real PDF and then holds junk still passes. What really protects downloads is that the download route sends every file as a plain attachment (`application/octet-stream`), so a browser saves it instead of opening it. DICOM files without the 128-byte header are refused on purpose, and so are empty files. I don't know how common DICOM files without that header are.
 
 ## Logging and errors
 
-- No plain 404 gets logged (wrong patient, user, file or assignment ID), and a few 400s aren't either (invalid role, bad file type, file too large). Real 403s are. Low priority — mostly typos, not attacks.
+- No plain 404 gets logged (wrong patient, user, file or assignment ID), and a few 400s aren't either (invalid role, bad file type, file too large, file contents that don't match the type). Real 403s are, except a wrong setup token on the bootstrap route. Low priority — mostly typos, not attacks.
 - If an audit row names a user that doesn't exist, the database refuses it and `log_action` swallows the error, so nothing is recorded. This happens in the "user not found" branch of `change_password` and for a signed token with a made-up user ID.
 - `action` values are plain strings typed at each call site. It can't be exploited from outside; the risk is me spelling one two ways. The tests hard-code a few of them.
 - `entity_type` and `entity_id` don't always point at the same table. On purpose: when something is rejected before the real record exists, I log the real ID I have instead of a meaningless placeholder.
@@ -54,7 +60,7 @@ Things that are still broken or deferred, and things worth remembering before I 
 
 ## Test suite
 
-- 417 pass, 16 expected to fail, about 90 seconds. Most of that is real bcrypt at the same cost the app uses — on purpose (see the decisions log).
+- 430 pass, 14 expected to fail, about 90 seconds. Most of that is real bcrypt at the same cost the app uses — on purpose (see the decisions log).
 - The tests share one database and run in a fixed order set in `conftest.py`. Any single file also runs on its own.
 - Rate limits exist on five routes (login, change password, upload, download, bootstrap) and each one is tested. The file list and invalidate routes have none.
 - Not covered by tests: the real Backblaze bucket (tests are forced onto local storage), the real Alembic migrations, two requests at the same instant, and the `api` container.
@@ -79,3 +85,7 @@ Things that are still broken or deferred, and things worth remembering before I 
 - When a strict expected-to-fail test suddenly passes, the run goes red on purpose. The bug got fixed: delete the marker.
 - Commenting `@dependabot ignore this major version` on a PR got no reply in 14 hours. A rule in `dependabot.yml` is what works: the SQLAlchemy one replaced the failing group PR within about ten minutes.
 - The runtime image has no pip, so `docker compose run … pip freeze` no longer works. Freeze the builder stage instead: `docker build --target builder -t freezecheck . && docker run --rm freezecheck pip freeze`.
+- `--forwarded-allow-ips` replaces uvicorn's default of `127.0.0.1`; it doesn't add to it. My first version left `127.0.0.1` out and every audit row showed a `127.0.0.x` address, even though my local tests passed. After changing proxy settings, I look at the audit log on the real service.
+- The app refuses to deactivate the last active Admin, and the SuperAdmin doesn't count as one. A smoke test that creates a throwaway Admin can't clean up after itself unless another Admin exists.
+- Don't create `VALKEY_URL` on Render, not even an empty one. An empty variable reads as an empty string, and `limiter.py` would use that instead of falling back to `memory://`.
+- A strict expected-to-fail test treats any error as the expected failure, even a `NameError` from a typo. A stray test with an undefined name once passed as "expected" for a while. When I add or remove a marker, I check why the test fails.
