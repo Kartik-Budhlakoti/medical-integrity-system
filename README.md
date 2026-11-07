@@ -154,7 +154,7 @@ docker compose up --build
 
 Keep that terminal open. After migrations and startup finish, open **http://127.0.0.1:8000/health**. Expected response: `{"status":"ok"}`. This checks the API process, not database or storage connectivity.
 
-Initialize the first SuperAdmin using `/bootstrap/superadmin` and `X-Bootstrap-Token`. The route closes itself once a SuperAdmin exists.
+Initialize the first SuperAdmin using `/bootstrap/superadmin` and `X-Bootstrap-Token`. The route closes itself once a SuperAdmin exists. The commands are under [First requests](#first-requests).
 
 | Symptom | Explanation / action |
 | --- | --- |
@@ -163,6 +163,71 @@ Initialize the first SuperAdmin using `/bootstrap/superadmin` and `X-Bootstrap-T
 | Uploads disappear | With local storage, uploaded files live inside the API container. `docker compose down` deletes them while the database keeps the rows. Use `docker compose stop` and `docker compose start` instead; replacing the API container also loses its local uploads. |
 
 Sources: [environment template](.env.example), [Compose](docker-compose.yml), [startup](scripts/start.sh), [health route](app/main.py), [bootstrap](app/routers/bootstrap.py), [known issues](docs/known-issues.md).
+
+## First requests
+
+<details>
+<summary>Create a SuperAdmin and an Admin, add a patient, upload a file, and watch a change get detected</summary>
+
+Run these in a second terminal, in the repository folder, while Compose is running. They were run against a fresh clone with the settings above. The ids below (patient 1, file 1) assume a new, empty database. The email addresses and the password are examples for local testing only.
+
+Passwords need at least 8 characters, one uppercase letter, one digit and one special character, and at most 72 bytes. Tokens last `ACCESS_TOKEN_EXPIRE_MINUTES` (30 above), and login is limited to 5 per minute.
+
+**1. Create the first SuperAdmin**
+
+```bash
+BOOT=$(grep '^BOOTSTRAP_TOKEN=' .env | cut -d= -f2)
+curl -s -X POST http://127.0.0.1:8000/bootstrap/superadmin \
+  -H "X-Bootstrap-Token: $BOOT" \
+  -H "Content-Type: application/json" \
+  -d '{"full_name":"Test SuperAdmin","email":"superadmin@example.com","password":"Demo_Pass-2026"}'
+```
+
+Expected: `{"message":"System initialized successfully"}`. This call also creates the four roles. On a new database their ids are 1 SuperAdmin, 2 Admin, 3 Doctor and 4 Nurse.
+
+**2. Log in as SuperAdmin and create an Admin.** A SuperAdmin has no access to patients, so patient work needs an Admin.
+
+```bash
+SA=$(curl -s -X POST http://127.0.0.1:8000/auth/login -H "Content-Type: application/json" -d '{"email":"superadmin@example.com","password":"Demo_Pass-2026"}' | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+curl -s -X POST http://127.0.0.1:8000/users/create -H "Authorization: Bearer $SA" -H "Content-Type: application/json" -d '{"full_name":"Test Admin","email":"admin@example.com","password":"Demo_Pass-2026","role_id":2}'
+```
+
+**3. Log in as the Admin and create a patient**
+
+```bash
+ADM=$(curl -s -X POST http://127.0.0.1:8000/auth/login -H "Content-Type: application/json" -d '{"email":"admin@example.com","password":"Demo_Pass-2026"}' | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+curl -s -X POST http://127.0.0.1:8000/patients/create -H "Authorization: Bearer $ADM" -H "Content-Type: application/json" -d '{"full_name":"Test Patient","dob":"1990-01-01","height_cm":170,"weight_kg":70,"chief_complaint":"synthetic test","is_emergency":false}'
+```
+
+**4. Upload a small PDF and download it.** The two checksums match.
+
+```bash
+printf '%%PDF-1.4\nsynthetic test file\n' > /tmp/mis-test.pdf
+curl -s -X POST http://127.0.0.1:8000/files/upload -H "Authorization: Bearer $ADM" -F "patient_id=1" -F "file_type=report" -F "file=@/tmp/mis-test.pdf;type=application/pdf"
+curl -s -H "Authorization: Bearer $ADM" http://127.0.0.1:8000/files/1 -o /tmp/mis-down.pdf
+sha256sum /tmp/mis-test.pdf /tmp/mis-down.pdf
+```
+
+**5. Change the stored copy and download it again.** This works with local storage (`STORAGE_BACKEND=local`), where the stored file is inside the API container.
+
+```bash
+FILE=$(docker compose exec -T api sh -c 'ls -t uploads | head -1')
+docker compose exec -T api sh -c "echo tampered >> uploads/$FILE"
+curl -s -H "Authorization: Bearer $ADM" http://127.0.0.1:8000/files/1
+echo
+curl -s -H "Authorization: Bearer $ADM" http://127.0.0.1:8000/files/1
+echo
+```
+
+The first download returns `{"detail":"File integrity verification failed"}` and marks the file inactive. The second returns `{"detail":"File is invalidated"}`. The audit log records both:
+
+```bash
+docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select id, action, result from audit_logs order by id desc limit 4"'
+```
+
+The newest rows are `FILE_ACCESS_DENIED` and `TAMPER_DETECTED`.
+
+</details>
 
 ## Rate limits
 
